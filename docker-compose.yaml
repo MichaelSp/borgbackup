@@ -1,0 +1,10 @@
+services:
+  borgbackup:
+    image: ghcr.io/michaelsp/borgbackup:v0.1.0
+    volumes:
+      - /path/to/backup:/backup
+      - /path/to/ssh:/ssh
+    environment:
+      - BORG_REPO=/backup
+      - BORG_PASSPHRASE=yourpassphrase
+      - SSH_KEY=/ssh/id_rsa
