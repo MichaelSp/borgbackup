@@ -8,15 +8,15 @@ SSH_HOST_KEY_DIR="${SSH_HOST_KEY_DIR:-/etc/ssh/keys}"
 SSH_PORT="${SSH_PORT:-2222}"
 
 backup() {
-  ID=${1}
-  TYPE=${2}
-  SRC=${3}
-  KEEP=${4}
+  ID=${2}
+  TYPE=${3}
+  SRC=${4}
+  KEEP=${5}
   DATE=$(date +%Y-%m-%d-%H-%M-%S)
 
   set -e # exit on error
 
-  echo "?? Check if the repo is initialized..."
+  echo "🧐 Check if the repo is initialized..."
   if ! borg info > /dev/null 2>&1; then
     echo "🤖 Initializing borg repo..."
     borg init --encryption=repokey
@@ -25,7 +25,7 @@ backup() {
     echo "🤖 store the repo-key passphrase in ${BORG_SECURITY_DIR}/repokey"
   fi
 
-  if [ "${TYPE}" = "pvc" ]; then
+  if [ "$(echo "${TYPE}" | tr '[:upper:]' '[:lower:]')" = "pvc" ]; then
     echo "🤖 PVC backup detected. Find PVC path"
     # SRC has format namespace/pvc
     NS=$(echo "${SRC}" | cut -d'/' -f1)
@@ -35,7 +35,7 @@ backup() {
     echo "🤖 PVC path is ${SRC}"
   fi
 
-  echo "🤖 Running borg backup for $ID from $SRC..."
+  echo "🤖 Running borg backup for '$ID' from $SRC..."
   borg create --stats --progress --compression lz4 "${BORG_REPO}::${ID}-${DATE}" "${SRC}"
 
   echo "🤖 Pruning old backups..."
