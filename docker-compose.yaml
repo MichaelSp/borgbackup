@@ -1,10 +1,38 @@
 services:
-  borgbackup:
-    image: ghcr.io/michaelsp/borgbackup:v0.1.0
-    volumes:
-      - /path/to/backup:/backup
-      - /path/to/ssh:/ssh
+  borgbackup-destination:
+    image: borgbackup
+    command:
+      - server
     environment:
-      - BORG_REPO=/backup
-      - BORG_PASSPHRASE=yourpassphrase
-      - SSH_KEY=/ssh/id_rsa
+      - SSH_PORT=2234
+    ports:
+      - "2234:2234"
+    volumes:
+      - /var/srv/backups:/dst
+      - /path/to/ssh/keys:/etc/ssh/keys
+      - /path/to/authorized_keys:/root/.ssh/authorized_keys:ro
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+        reservations:
+          memory: 64m
+  borgbackup-source:
+    image: borgbackup
+    command:
+      - client
+    environment:
+      - BORG_REPO=ssh://backup:2234/dst
+      - BORG_PASSCOMMAND=cat /root/.config/borg/passphrase
+      - BORG_SECURITY_DIR=/var/borg/security
+    volumes:
+      - /path/to/config.yaml:/etc/backup/config.yaml
+      - /path/to/ssh:/root/.ssh
+      - /path/to/borg/passphrase:/root/.config/borg
+      - /path/to/borg/security:/var/borg/security
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+        reservations:
+          memory: 64m

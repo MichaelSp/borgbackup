@@ -14,11 +14,20 @@ backup() {
 
   set -e # exit on error
 
+  echo "?? Check if the repo is initialized..."
+  if ! borg info > /dev/null 2>&1; then
+    echo "🤖 Initializing borg repo..."
+    borg init --encryption=repokey
+
+    borg key export > "${BORG_SECURITY_DIR}/repokey"
+    echo "🤖 store the repo-key passphrase in ${BORG_SECURITY_DIR}/repokey"
+  fi
+
   echo "🤖 Running borg backup for $ID from $SRC..."
   borg create --stats --progress --compression lz4 "${BORG_REPO}::${ID}-${DATE}" "${SRC}"
 
   echo "🤖 Pruning old backups..."
-  borg prune --list --keep-within "${KEEP}" "${BORG_REPO}"
+  borg prune --list --keep-within "${KEEP}"
 }
 
 client() {

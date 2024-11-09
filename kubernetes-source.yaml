@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: backup-sender
+spec:
+  selector:
+    matchLabels:
+      app: backup-sender
+  template:
+    metadata:
+      labels:
+        app: backup-sender
+    spec:
+      containers:
+        - name: backup-sender
+          image: borgbackup
+          args: [ "client" ]
+          env:
+            - name: BORG_REPO
+              value: "ssh://backup:2234/dst"
+            - name: BORG_PASSCOMMAND
+              value: "cat /root/.config/borg/passphrase"
+            - name: BORG_SECURITY_DIR
+              value: "/var/borg/security"
+          volumeMounts:
+            - name: backup-config
+              mountPath: /etc/backup/config.yaml
+              subPath: config.yaml
+            - name: ssh-secrets
+              mountPath: /root/.ssh
+            - name: borg-passphrase
+              mountPath: /root/.config/borg
+            - name: borg-security
+              mountPath: /var/borg/security
+      volumes:
+        - name: backup-config
+          configMap:
+            name: backup-config
+        - name: ssh-config
+          configMap:
+            name: ssh-config
+        - name: ssh-secrets
+          secret:
+            secretName: backup-ssh-keys-source
+            defaultMode: 0600
+        - name: borg-passphrase
+          secret:
+            secretName: borg-repo-passphrase-secrets
+            defaultMode: 0600
+        - name: borg-security
+          persistentVolumeClaim:
+            claimName: borg-security
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backup-config
+data:
+  config.yaml: |
+    src:
+      schedule: "0 0 * * *"
+      source: "/source"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: borg-security
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi

@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backup-dst
+  labels:
+    app: backup-dst
+spec:
+  selector:
+    matchLabels:
+      app: backup-dst
+  template:
+    metadata:
+      name: backup-dst
+      labels:
+        app: backup-dst
+    spec:
+      containers:
+        - name: backup-src
+          image: borgbackup
+          args: [ "server" ]
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: SSH_PORT
+              value: "2234"
+          ports:
+            - containerPort: 2234
+          volumeMounts:
+            - name: backup-destination
+              mountPath: /dst
+            - name: ssh-keys
+              mountPath: /etc/ssh/keys
+            - name: ssh-keys
+              mountPath: /root/.ssh/authorized_keys
+              subPath: authorized_keys
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "128Mi"
+      volumes:
+        - name: backup-destination
+          hostPath:
+            path: /var/srv/backups
+        - name: ssh-keys
+          secret:
+            secretName: backup-ssh-keys-destination
+            defaultMode: 0600
+      restartPolicy: Always
+      tolerations:
+        - key: "location"
+          operator: "Equal"
+          value: "home"
+          effect: "NoExecute"
+      nodeSelector:
+        location: home
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backup-dst
+spec:
+  type: ClusterIP
+  selector:
+    app: backup-dst
+  ports:
+    - protocol: TCP
+      port: 2234
+      targetPort: 2234
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: backup-ssh-keys-destination
+type: Opaque
+stringData:
+  authorized_keys: "x"
+  ssh_host_ed25519_key: "x"
+  ssh_host_ed25519_key.pub: "x"
