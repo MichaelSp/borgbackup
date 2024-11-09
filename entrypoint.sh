@@ -22,13 +22,17 @@ backup() {
 }
 
 client() {
-  yq 'to_entries | .[] | "\(.value.schedule) /entrypoint.sh backup \(.key) \"\(.value.source // env(DEFAULT_SRC))\" \(.value.keep // env(DEFAULT_KEEP))"' "${BACKUP_CONFIG_YAML}" > /etc/crontabs/root
+  if [ -f "${BACKUP_CONFIG_YAML}" ]; then
+    yq 'to_entries | .[] | "\(.value.schedule) /entrypoint.sh backup \(.key) \"\(.value.source // env(DEFAULT_SRC))\" \(.value.keep // env(DEFAULT_KEEP))"' "${BACKUP_CONFIG_YAML}" | su-exec borg crontab -
+  else
+    echo "🤖 assuming a crontab is mounted"
+  fi
 
-  echo "🤖 Crontab file:"
-  cat /etc/crontabs/root
+  echo "🤖 Current crontab for borg:"
+  su-exec borg crontab -l
 
   echo "🤖 Starting crond..."
-  crond -f -d 8 -L /dev/stdout -l 8
+  exec crond -f -d 8 -L /dev/stdout -l 8
 }
 
 server() {
@@ -73,7 +77,7 @@ server() {
   [ -f "${SSH_HOST_KEY_DIR}/ssh_host_ed25519_key" ] && echo "HostKey ${SSH_HOST_KEY_DIR}/ssh_host_ed25519_key" >> /etc/ssh/sshd_config.d/custom.conf
 
   # start sshd in the background. -e is to log everything to stderr.
-  /usr/sbin/sshd -e -D
+  exec /usr/sbin/sshd -e -D
 }
 
 case "${1:-client}" in
