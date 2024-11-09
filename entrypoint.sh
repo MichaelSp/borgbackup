@@ -52,8 +52,8 @@ server() {
   } > /etc/ssh/sshd_config.d/custom.conf
 
 
-  # Check if SSH host keys are missing
-  if [ ! -e "$SSH_HOST_KEY_DIR"/ssh_host_rsa_key ] || [ ! -e "$SSH_HOST_KEY_DIR"/ssh_host_ecdsa_key ] || [ ! -e "$SSH_HOST_KEY_DIR"/ssh_host_ed25519_key ]; then
+  # Check if any ssh keys are present. If not, generate them.
+  if [ ! -f "${SSH_HOST_KEY_DIR}/ssh_host_rsa_key" ] && [ ! -f "${SSH_HOST_KEY_DIR}/ssh_host_ecdsa_key" ] && [ ! -f "${SSH_HOST_KEY_DIR}/ssh_host_ed25519_key" ]; then
     echo "🏃‍️ No ssh keys found. Generating SSH keys for you..."
 
     ssh-keygen -t rsa -b 4096 -f "$SSH_HOST_KEY_DIR"/ssh_host_rsa_key -N "" -q
