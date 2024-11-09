@@ -24,7 +24,19 @@ backup-from-pvc:
   schedule: "0 0 * * *"
   type: pvc
   source: "namespace/pvc"
+backup-from-db-dump:
+  type: mariadb
+  namespace: "namespace"
+  helmReleaseName: "helm-release-name"
+backup-from-db-pqsql:
+  type: postgresql
+  namespace: "namespace"
+  helmReleaseName: "helm-pg-release-name" 
 ```
+
+The databases are found using this label filter:
+
+`app.kubernetes.io/name=mariadb,app.kubernetes.io/instance=${helmReleaseName},app.kubernetes.io/component=primary`
 
 ## Environment Variables
 

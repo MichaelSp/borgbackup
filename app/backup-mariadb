@@ -1,0 +1,81 @@
+#!/usr/bin/env sh
+set -e
+set -x
+
+. /app/lib.sh
+KEY=${1}
+
+[ -z "${KEY}" ] && echo "KEY is required" && exit 1
+[ -z "${BACKUP_CONFIG_YAML}" ] && echo "BACKUP_CONFIG_YAML is required" && exit 1
+
+CONFIG=$(yq eval ".${KEY}" "${BACKUP_CONFIG_YAML}")
+TMPDIR=$(mktemp -d)
+trap "rm -rf ${TMPDIR}" EXIT
+
+if [ "${CONFIG}" = "" ] || [ "${CONFIG}" = "null" ]; then
+  echo "🤖 No config found for '${KEY}'"
+  exit 1
+fi
+
+NAMESPACE=$(echo "${CONFIG}" | yq '.namespace')
+APP_NAME=$(echo "${CONFIG}" | yq '.helmReleaseName')
+COMPRESSION=$(echo "${CONFIG}" | yq '.compression // env(DEFAULT_COMPRESSION)')
+KEEP=$(echo "${CONFIG}" | yq '.keep // env(DEFAULT_KEEP)')
+
+if [ ! "$(echo "${CONFIG}" | yq '.type')" = "mariadb" ]; then
+  echo "🤖 Config for '${KEY}' is not of type 'mariadb'"
+  exit 1
+fi
+
+if [ -z "$APP_NAME" ] || [ -z "$NAMESPACE" ]; then
+  echo "NAMESPACE and APP_NAME is required 💥"
+  exit 1
+fi
+
+FILTER="app.kubernetes.io/name=mariadb,app.kubernetes.io/instance=${APP_NAME},app.kubernetes.io/component=primary"
+
+POD_YAML=$(kubectl get statefulset -n "$NAMESPACE" -l "$FILTER" -o json)
+
+# extract pod name
+STATEFUL_SET_NAME=$(echo "${POD_YAML}" | yq '.items[0].metadata.name')
+if [ -z "$STATEFUL_SET_NAME" ] || [ "$STATEFUL_SET_NAME" = "null" ]; then
+  echo "ERROR: No StatefulSet found for 'app.kubernetes.io/instance=${APP_NAME}' in namespace '$NAMESPACE'"
+  exit 1
+fi
+
+
+# fail if source pod not running
+if ! kubectl get pods -n "$NAMESPACE" -l "$FILTER" -o jsonpath="{.items[0].status.phase}" | grep -q Running; then
+  echo "ERROR: No pod found for 'app.kubernetes.io/instance=${APP_NAME}' in namespace '$NAMESPACE' - is pod running?"
+  exit 1
+fi
+
+# extract secret name
+SECRET_NAME=$(echo "${POD_YAML}" | yq '.items[0].spec.template.spec.containers[0].env[] | select(.name == "MARIADB_ROOT_PASSWORD") | .valueFrom.secretKeyRef.name')
+if [ -z "$SECRET_NAME" ]; then
+  echo "ERROR: No secret found for '${APP_NAME}' in namespace '$NAMESPACE' - searching for an env var named 'MARIADB_ROOT_PASSWORD'"
+  echo "spec: ${POD_YAML}"
+  exit 1
+fi
+
+## check if pod is running
+if ! kubectl get pods -n "$NAMESPACE" -l "$FILTER"; then
+  echo "ERROR: No pod found for 'app.kubernetes.io/instance=${APP_NAME}' in namespace '$NAMESPACE'"
+  exit 1
+fi
+
+POD_NAME=$(kubectl get pods -n "$NAMESPACE" -l "$FILTER" -o jsonpath="{.items[0].metadata.name}")
+
+MYSQL_PASSWORD=$(kubectl --context="${KUBECONTEXT}" get secrets -n "$NAMESPACE" "$SECRET_NAME" -o jsonpath='{.data.mariadb-root-password}' | base64 -d)
+MYSQL_USER=root
+SRC="${TMPDIR}/dump.sql"
+
+echo "🤖 Dumping database '${POSTGRES_DATABASE}' from pod '${POD_NAME}' in namespace '${NAMESPACE}'"
+kubectl  exec -n "$NAMESPACE" "$POD_NAME" -c mariadb -- bash -c "/opt/bitnami/mariadb/bin/mariadb-dump --user=${MYSQL_USER} --password=${MYSQL_PASSWORD} --all-databases" >> "$SRC"
+
+echo "🤖 DUMP Done"
+echo "🤖 Running borg backup for '${KEY}' from '$SRC'"
+borg create --stats --progress --compression "${COMPRESSION}" "${BORG_REPO}::${KEY}-${DATE}" "${SRC}"
+
+echo "🤖 Pruning old backups..."
+borg prune --list --keep-within "${KEEP}"
