@@ -37,8 +37,6 @@ server() {
     mkdir -p "$SSH_HOST_KEY_DIR"
   fi
 
-  find /etc/ssh/ -type f -name "ssh_host_*" -exec mv -t "$SSH_HOST_KEY_DIR" "{}" \;
-
   echo "🤖 Setting SSHD configuration..."
   {
     echo "Port ${SSH_PORT}"
@@ -64,7 +62,8 @@ server() {
     echo "ℹ️ This is the key: "
     echo
     cat "$SSH_HOST_KEY_DIR"/ssh_host_rsa_key.pub
-    echo "ℹ️ Add this key to your authorized_keys file in your client machine."
+    echo
+    echo "ℹ️ Add this key to your known_hosts file on the client side."
     echo
     echo
   fi
