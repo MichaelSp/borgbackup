@@ -45,8 +45,9 @@ server() {
   echo "🤖 Setting SSHD configuration..."
   {
     echo "Port ${SSH_PORT}"
-    echo "PermitRootLogin no"
+    echo "PermitRootLogin prohibit-password"
     echo "PermitEmptyPasswords no"
+    echo "PasswordAuthentication no"
     echo "MaxAuthTries 5"
     echo "LoginGraceTime 20"
     echo "ChallengeResponseAuthentication no"
