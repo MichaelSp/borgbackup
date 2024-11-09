@@ -17,7 +17,7 @@ backup() {
   DATE=$(date +%Y-%m-%d-%H-%M-%S)
   CONFIG=$(yq eval ".${KEY}" "${BACKUP_CONFIG_YAML}")
 
-  if [ "${CONFIG}" == "" ] || [ "${CONFIG}" == "null" ]; then
+  if [ "${CONFIG}" = "" ] || [ "${CONFIG}" = "null" ]; then
     echo "🤖 No config found for '${KEY}'"
     exit 1
   fi
