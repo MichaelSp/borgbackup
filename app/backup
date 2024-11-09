@@ -2,9 +2,13 @@
 
 . /app/lib.sh
 
-KEY=${2}
+KEY=${1}
+
+[ -z "${KEY}" ] && echo "KEY is required" && exit 1
+[ -z "${BACKUP_CONFIG_YAML}" ] && echo "BACKUP_CONFIG_YAML is required" && exit 1
 
 set -e # exit on error
+[ "${DEBUG}" = "true" ] && set -x
 
 CONFIG=$(yq eval ".${KEY}" "${BACKUP_CONFIG_YAML}")
 

@@ -8,4 +8,3 @@ export DEFAULT_COMPRESSION="${DEFAULT_COMPRESSION:-lz4}"
 export BACKUP_CONFIG_YAML="${BACKUP_CONFIG_YAML:-/etc/backup/config.yaml}"
 export SSH_HOST_KEY_DIR="${SSH_HOST_KEY_DIR:-/etc/ssh/keys}"
 export SSH_PORT="${SSH_PORT:-2222}"
-
