@@ -5,4 +5,6 @@ RUN adduser -D -s /bin/sh borg
 
 COPY ./entrypoint.sh /entrypoint.sh
 
+USER borg
+
 ENTRYPOINT ["/entrypoint.sh"]

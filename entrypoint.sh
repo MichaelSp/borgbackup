@@ -4,6 +4,22 @@ export DEFAULT_SRC="${DEFAULT_SRC:-/data}"
 export DEFAULT_KEEP="${DEFAULT_KEEP:-7}"
 BACKUP_CONFIG_YAML="${BACKUP_CONFIG_YAML:-/etc/backup/config.yaml}"
 SSH_HOST_KEY_DIR="${SSH_HOST_KEY_DIR:-/etc/ssh/keys}"
+SSH_PORT="${SSH_PORT:-2222}"
+
+backup() {
+  ID=${1}
+  SRC=${2}
+  KEEP=${3}
+  DATE=$(date +%Y-%m-%d-%H-%M-%S)
+
+  set -e # exit on error
+
+  echo "🤖 Running borg backup for $ID from $SRC..."
+  borg create --stats --progress --compression lz4 "${BORG_REPO}::${ID}-${DATE}" "${SRC}"
+
+  echo "🤖 Pruning old backups..."
+  borg prune --list --keep-within "${KEEP}" "${BORG_REPO}"
+}
 
 client() {
   yq 'to_entries | .[] | "\(.value.schedule) /entrypoint.sh backup \(.key) \"\(.value.source // env(DEFAULT_SRC))\" \(.value.keep // env(DEFAULT_KEEP))"' "${BACKUP_CONFIG_YAML}" > /etc/crontabs/root
@@ -13,19 +29,6 @@ client() {
 
   echo "🤖 Starting crond..."
   crond -f -d 8 -L /dev/stdout -l 8
-}
-
-backup() {
-  ID=${1}
-  SRC=${2}
-  KEEP=${3}
-  DATE=$(date +%Y-%m-%d-%H-%M-%S)
-
-  echo "🤖 Running borg backup for $ID from $SRC..."
-  borg create --stats --progress --compression lz4 "${BORG_REPO}::${ID}-${DATE}" "${SRC}"
-
-  echo "🤖 Pruning old backups..."
-  borg prune --list --keep-within "${KEEP}" "${BORG_REPO}"
 }
 
 server() {
@@ -38,7 +41,7 @@ server() {
 
   echo "🤖 Setting SSHD configuration..."
   {
-    echo "Port ${SSH_PORT:-2222}"
+    echo "Port ${SSH_PORT}"
     echo "PermitRootLogin no"
     echo "PermitEmptyPasswords no"
     echo "MaxAuthTries 5"
