@@ -1,6 +1,7 @@
 #!/usr/bin/env sh
 
 export DEFAULT_SRC="${DEFAULT_SRC:-/data}"
+export DEFAULT_TYPE="${DEFAULT_TYPE:-pvc}" # PVC or FS
 export DEFAULT_KEEP="${DEFAULT_KEEP:-7}"
 BACKUP_CONFIG_YAML="${BACKUP_CONFIG_YAML:-/etc/backup/config.yaml}"
 SSH_HOST_KEY_DIR="${SSH_HOST_KEY_DIR:-/etc/ssh/keys}"
@@ -8,8 +9,9 @@ SSH_PORT="${SSH_PORT:-2222}"
 
 backup() {
   ID=${1}
-  SRC=${2}
-  KEEP=${3}
+  TYPE=${2}
+  SRC=${3}
+  KEEP=${4}
   DATE=$(date +%Y-%m-%d-%H-%M-%S)
 
   set -e # exit on error
@@ -23,6 +25,16 @@ backup() {
     echo "🤖 store the repo-key passphrase in ${BORG_SECURITY_DIR}/repokey"
   fi
 
+  if [ "${TYPE}" = "pvc" ]; then
+    echo "🤖 PVC backup detected. Find PVC path"
+    # SRC has format namespace/pvc
+    NS=$(echo "${SRC}" | cut -d'/' -f1)
+    PVC=$(echo "${SRC}" | cut -d'/' -f2)
+    PV=$(kubectl get pvc -n "${NS}" "${PVC}"  -o jsonpath='{.spec.volumeName}')
+    SRC=$(kubectl get pv "${PV}" -o jsonpath='{.spec.local.path}')
+    echo "🤖 PVC path is ${SRC}"
+  fi
+
   echo "🤖 Running borg backup for $ID from $SRC..."
   borg create --stats --progress --compression lz4 "${BORG_REPO}::${ID}-${DATE}" "${SRC}"
 
@@ -33,7 +45,7 @@ backup() {
 client() {
   if [ -f "${BACKUP_CONFIG_YAML}" ]; then
     echo "🤖 Setting up crontab from '${BACKUP_CONFIG_YAML}'"
-    yq 'to_entries | .[] | "\(.value.schedule) /entrypoint.sh backup \(.key) \"\(.value.source // env(DEFAULT_SRC))\" \(.value.keep // env(DEFAULT_KEEP))"' "${BACKUP_CONFIG_YAML}" >> /etc/crontabs/root
+    yq 'to_entries | .[] | "\(.value.schedule) /entrypoint.sh backup \(.key) \"\(.value.type// env(DEFAULT_TYPE))\" \"\(.value.source// env(DEFAULT_SRC))\"  \(.value.keep // env(DEFAULT_KEEP))"' "${BACKUP_CONFIG_YAML}" >> /etc/crontabs/root
   else
     echo "🤖 assuming a crontab is mounted at '/etc/crontabs/root'"
   fi
