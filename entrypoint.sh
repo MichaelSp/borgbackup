@@ -2,19 +2,40 @@
 
 export DEFAULT_SRC="${DEFAULT_SRC:-/data}"
 export DEFAULT_TYPE="${DEFAULT_TYPE:-pvc}" # PVC or FS
-export DEFAULT_KEEP="${DEFAULT_KEEP:-7}"
+export DEFAULT_KEEP="${DEFAULT_KEEP:-7d}"
+export DEFAULT_SCHEDULE="${DEFAULT_SCHEDULE:-0 0 * * *}"
+export DEFAULT_COMPRESSION="${DEFAULT_COMPRESSION:-lz4}"
 BACKUP_CONFIG_YAML="${BACKUP_CONFIG_YAML:-/etc/backup/config.yaml}"
 SSH_HOST_KEY_DIR="${SSH_HOST_KEY_DIR:-/etc/ssh/keys}"
 SSH_PORT="${SSH_PORT:-2222}"
 
 backup() {
-  ID=${2}
-  TYPE=${3}
-  SRC=${4}
-  KEEP=${5}
-  DATE=$(date +%Y-%m-%d-%H-%M-%S)
+  KEY=${2}
 
   set -e # exit on error
+
+  DATE=$(date +%Y-%m-%d-%H-%M-%S)
+  CONFIG=$(yq eval ".${KEY}" "${BACKUP_CONFIG_YAML}")
+
+  if [ "${CONFIG}" == "" ] || [ "${CONFIG}" == "null" ]; then
+    echo "🤖 No config found for '${KEY}'"
+    exit 1
+  fi
+
+  COMPRESSION=$(echo "${CONFIG}" | yq eval '.compression // env(DEFAULT_COMPRESSION)')
+  KEEP=$(echo "${CONFIG}" | yq eval '.keep // env(DEFAULT_KEEP)')
+  SRC=$(echo "${CONFIG}" | yq eval '.source // env(DEFAULT_SRC)')
+  TYPE=$(echo "${CONFIG}" | yq eval '.type // env(DEFAULT_TYPE)' | tr '[:upper:]' '[:lower:]')
+
+  if [ "${TYPE}" = "pvc" ]; then
+    echo "🤖 PVC backup detected. Find PVC path"
+
+    NS=$(echo "${SRC}" | cut -d'/' -f1)
+    PVC=$(echo "${SRC}" | cut -d'/' -f2)
+    PV=$(kubectl get pvc -n "${NS}" "${PVC}"  -o jsonpath='{.spec.volumeName}')
+    SRC=$(kubectl get pv "${PV}" -o jsonpath='{.spec.local.path}')
+    echo "🤖 PVC path is ${SRC}"
+  fi
 
   echo "🧐 Check if the repo is initialized..."
   if ! borg info > /dev/null 2>&1; then
@@ -25,18 +46,8 @@ backup() {
     echo "🤖 store the repo-key passphrase in ${BORG_SECURITY_DIR}/repokey"
   fi
 
-  if [ "$(echo "${TYPE}" | tr '[:upper:]' '[:lower:]')" = "pvc" ]; then
-    echo "🤖 PVC backup detected. Find PVC path"
-    # SRC has format namespace/pvc
-    NS=$(echo "${SRC}" | cut -d'/' -f1)
-    PVC=$(echo "${SRC}" | cut -d'/' -f2)
-    PV=$(kubectl get pvc -n "${NS}" "${PVC}"  -o jsonpath='{.spec.volumeName}')
-    SRC=$(kubectl get pv "${PV}" -o jsonpath='{.spec.local.path}')
-    echo "🤖 PVC path is ${SRC}"
-  fi
-
-  echo "🤖 Running borg backup for '$ID' from $SRC..."
-  borg create --stats --progress --compression lz4 "${BORG_REPO}::${ID}-${DATE}" "${SRC}"
+  echo "🤖 Running borg backup for '${KEY}' from '$SRC'"
+  borg create --stats --progress --compression "${COMPRESSION}" "${BORG_REPO}::${KEY}-${DATE}" "${SRC}"
 
   echo "🤖 Pruning old backups..."
   borg prune --list --keep-within "${KEEP}"
@@ -45,7 +56,7 @@ backup() {
 client() {
   if [ -f "${BACKUP_CONFIG_YAML}" ]; then
     echo "🤖 Setting up crontab from '${BACKUP_CONFIG_YAML}'"
-    yq 'to_entries | .[] | "\(.value.schedule) /entrypoint.sh backup \(.key) \"\(.value.type// env(DEFAULT_TYPE))\" \"\(.value.source// env(DEFAULT_SRC))\"  \(.value.keep // env(DEFAULT_KEEP))"' "${BACKUP_CONFIG_YAML}" >> /etc/crontabs/root
+    yq 'to_entries | .[] | "\(.value.schedule // env(DEFAULT_SCHEDULE)) /entrypoint.sh backup \(.key)"' "${BACKUP_CONFIG_YAML}" >> /etc/crontabs/root
   else
     echo "🤖 assuming a crontab is mounted at '/etc/crontabs/root'"
   fi
