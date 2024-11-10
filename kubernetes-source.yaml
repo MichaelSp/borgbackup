@@ -23,9 +23,6 @@ spec:
             - name: BORG_SECURITY_DIR
               value: "/var/borg/security"
           volumeMounts:
-            - name: backup-config
-              mountPath: /etc/backup/config.yaml
-              subPath: config.yaml
             - name: ssh-secrets
               mountPath: /root/.ssh
             - name: borg-passphrase
@@ -33,9 +30,6 @@ spec:
             - name: borg-security
               mountPath: /var/borg/security
       volumes:
-        - name: backup-config
-          configMap:
-            name: backup-config
         - name: ssh-config
           configMap:
             name: ssh-config
@@ -50,16 +44,6 @@ spec:
         - name: borg-security
           persistentVolumeClaim:
             claimName: borg-security
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: backup-config
-data:
-  config.yaml: |
-    src:
-      schedule: "0 0 * * *"
-      source: "/source"
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

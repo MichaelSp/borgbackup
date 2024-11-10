@@ -1,0 +1,73 @@
+#!/usr/bin/env sh
+
+set -e
+
+SOURCES_YAML=${SOURCES_YAML:-./sources.yaml}
+ROOT=$(realpath "$(dirname "$0")")
+cd "$ROOT"
+
+DST=${DESTINATION:-/etc/borgmatic.d}
+export DEFAULT_TYPE="${DEFAULT_TYPE:-pvc}" # pvc, postgresql, mysql, fs
+
+
+# make kubectl available to the main-container
+[ -n "$(which kubectl)" ] && [ -d /bin-for-main ] && cp "$(which kubectl)" /bin-for-main/kubectl
+
+## loop over all keys in the configmap
+
+for id in $(yq 'keys | .[]' "$SOURCES_YAML"); do
+  CONFIG=$(yq ".$id" "$SOURCES_YAML")
+  TYPE=$(echo "${CONFIG}" | yq '.type // env(DEFAULT_TYPE)')
+
+  if [ "$TYPE" = "crontab" ] || [ $id = "crontab" ]; then
+    echo "🕰 [cron]  Write crontab config for $id"
+    echo "${CONFIG}" | yq '(.schedule + " " + .command)' > "${DST}/crontab.txt"
+    continue
+  else
+cat <<EOF > "${DST}/${id}.yaml"
+<<: !include /etc/borgmatic/common.config.yaml
+
+archive_name_format: "{hostname}-${id}-{now}"
+
+EOF
+  fi
+
+  case "$TYPE" in
+    pvc)
+      NS=$(echo "${CONFIG}" | yq '.namespace')
+      PVC=$(echo "${CONFIG}" | yq '.pvc')
+
+      if [ -z "$NS" ]; then
+        echo "Namespace is required for PVC backup"
+        exit 1
+      fi
+      if [ -z "$PVC" ]; then
+        echo "PVC is required for PVC backup"
+        exit 1
+      fi
+      PV=$(kubectl get pvc -n "${NS}" "${PVC}"  -o jsonpath='{.spec.volumeName}')
+      # shellcheck disable=SC2155 # used in yq
+      export SRC="$(kubectl get pv "${PV}" -o jsonpath='{.spec.local.path}')"
+
+      echo "${CONFIG}" | yq '{"source_directories": [env(SRC)], "exclude_patterns": .exclude_patterns // []}' >> "${DST}/${id}.yaml"
+      echo "📦 [pvc]   Write PVC config for $id"
+      ;;
+    postgresql)
+      echo "${CONFIG}" | "${ROOT}/backup-postgresql" "$id" >> "${DST}/${id}.yaml"
+      echo "🤖 [pgsql] Write mariadb config for $id"
+      ;;
+    mariadb)
+      echo "${CONFIG}" | "${ROOT}/backup-mariadb" "$id" >> "${DST}/${id}.yaml"
+      echo "🤖 [maria] Write mariadb config for $id"
+      ;;
+    fs)
+      echo "${CONFIG}" | yq '{"source_directories": .source_directories, "exclude_patterns": .exclude_patterns // []}' >> "${DST}/${id}.yaml"
+      echo "📁 [fs]    Write FS config for $id"
+      ;;
+    *)
+      echo "Unknown type: $TYPE"
+      exit 1
+      ;;
+  esac
+
+done

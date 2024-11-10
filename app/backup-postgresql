@@ -1,29 +1,17 @@
 #!/usr/bin/env sh
 
-. /app/lib.sh
-
 KEY=${1}
+CONFIG=$(cat)
 
 [ -z "${KEY}" ] && echo "KEY is required" && exit 1
-[ -z "${BACKUP_CONFIG_YAML}" ] && echo "BACKUP_CONFIG_YAML is required" && exit 1
+[ -z "${CONFIG}" ] && echo "CONFIG is required" && exit 1
 
 set -e # exit on error
 [ "${DEBUG}" = "true" ] && set -x
 
-CONFIG=$(yq eval ".${KEY}" "${BACKUP_CONFIG_YAML}")
-TMPDIR=$(mktemp -d)
-trap "rm -rf ${TMPDIR}" EXIT
-
-if [ "${CONFIG}" = "" ] || [ "${CONFIG}" = "null" ]; then
-  echo "🤖 No config found for '${KEY}'"
-  exit 1
-fi
-
-DUMP_AS_ADMIN=$(echo "${CONFIG}" | yq '.use_postgres_admin // true')
 NAMESPACE=$(echo "${CONFIG}" | yq '.namespace')
-APP_NAME=$(echo "${CONFIG}" | yq '.helmReleaseName')
-COMPRESSION=$(echo "${CONFIG}" | yq '.compression // env(DEFAULT_COMPRESSION)')
-KEEP=$(echo "${CONFIG}" | yq '.keep // env(DEFAULT_KEEP)')
+INSTANCE_NAME=$(echo "${CONFIG}" | yq '.instanceName')
+DUMP_AS_ADMIN=$(echo "${CONFIG}" | yq '.use_postgres_admin // true')
 
 if [ "$DUMP_AS_ADMIN" != "true" ] && [ "$DUMP_AS_ADMIN" != "false" ]; then
   echo "🤖 use_postgres_admin for '${KEY}' is not a boolean"
@@ -31,43 +19,31 @@ if [ "$DUMP_AS_ADMIN" != "true" ] && [ "$DUMP_AS_ADMIN" != "false" ]; then
 fi
 
 if [ ! "$(echo "${CONFIG}" | yq '.type')" = "postgresql" ]; then
-  echo "🤖 Config for '${KEY}' is not of type 'postgresql'"
+  echo "🤖 Config for '${KEY}' is not of type 'postgresql'" >&2
   exit 1
 fi
 
-if [ -z "$APP_NAME" ] || [ -z "$NAMESPACE" ]; then
-  echo "NAMESPACE and APP_NAME is required 💥"
+if [ -z "$INSTANCE_NAME" ] || [ -z "$NAMESPACE" ]; then
+  echo "NAMESPACE and INSTANCE_NAME is required 💥" >&2
   exit 1
 fi
 
-FILTER="app.kubernetes.io/name=postgresql,app.kubernetes.io/instance=${APP_NAME},app.kubernetes.io/component=primary"
+FILTER="app.kubernetes.io/name=postgresql,app.kubernetes.io/instance=${INSTANCE_NAME},app.kubernetes.io/component=primary"
 
-POD_YAML=$(kubectl get statefulset -n $NAMESPACE -l $FILTER -o json)
+POD_YAML=$(kubectl get statefulset -n "$NAMESPACE" -l "$FILTER" -o json)
 
 # extract pod name
 STATEFUL_SET_NAME=$(echo "${POD_YAML}" | yq '.items[0].metadata.name')
 if [ -z "$STATEFUL_SET_NAME" ] || [ "$STATEFUL_SET_NAME" = "null" ]; then
-echo "ERROR: No StatefulSet found for 'app.kubernetes.io/instance=${APP_NAME}' in namespace '$NAMESPACE'"
-exit 1
-fi
-
-# fail if source pod not running
-if ! kubectl get pods -n "$NAMESPACE" -l "$FILTER"; then
-  echo "ERROR: No pod found for 'app.kubernetes.io/instance=${APP_NAME}' in namespace '$NAMESPACE' - is pod running?"
+  echo "ERROR: No StatefulSet found for 'app.kubernetes.io/instance=${INSTANCE_NAME}' in namespace '$NAMESPACE'" >&2
   exit 1
 fi
 
 # extract secret name
 SECRET_NAME=$(echo "${POD_YAML}" | yq '.items[0].spec.template.spec.containers[0].env[] | select(.name == "POSTGRES_PASSWORD") | .valueFrom.secretKeyRef.name')
 if [ -z "$SECRET_NAME" ]; then
-  echo "ERROR: No secret found for '${APP_NAME}' in namespace '$NAMESPACE' - searching for an env var named 'POSTGRES_PASSWORD'"
-  echo "spec: ${POD_YAML}"
-  exit 1
-fi
-
-## check if pod is running
-if ! kubectl get pods -n "$NAMESPACE" -l "$FILTER"; then
-  echo "ERROR: No pod found for 'app.kubernetes.io/instance=${APP_NAME}' in namespace '$NAMESPACE'"
+  echo "ERROR: No secret found for '${INSTANCE_NAME}' in namespace '$NAMESPACE' - searching for an env var named 'POSTGRES_PASSWORD'" >&2
+  echo "spec: ${POD_YAML}" >&2
   exit 1
 fi
 
@@ -96,18 +72,18 @@ fi
 
 POSTGRES_DATABASE=$(echo "${POD_YAML}" | yq '.items[0].spec.template.spec.containers[0].env[] | select(.name == "POSTGRES_DATABASE") | .value')
 if [ -z "$POSTGRES_DATABASE" ]; then
-POSTGRES_DATABASE="postgres"
+  POSTGRES_DATABASE="postgres"
 fi
 
-echo "🤖 Dumping database '${POSTGRES_DATABASE}' from pod '${POD_NAME}' in namespace '${NAMESPACE}'"
+cat <<EOF
 
-SRC="${TMPDIR}/dump.sql"
-DATE=$(date +%Y-%m-%d-%H-%M-%S)
-kubectl exec -n $NAMESPACE $POD_NAME -- bash -c "PGPASSWORD=${PGPASSWORD} pg_dump -h $POD_NAME -U $PGUSER -d $POSTGRES_DATABASE -w" > $SRC
+read_special: "true"
+postgresql_databases:
+- name: all # all databases
+  username: ${PGUSER}
+  password: ${PGPASSWORD}
+  pg_dump_command: >
+    kubectl exec -n $NAMESPACE $POD_NAME --
+    bash -c "PGPASSWORD=${PGPASSWORD} pg_dump -h $POD_NAME -U $PGUSER -d $POSTGRES_DATABASE -w"
 
-echo "🤖 DUMP Done"
-echo "🤖 Running borg backup for '${KEY}' from '$SRC'"
-borg create --stats --progress --compression "${COMPRESSION}" "${BORG_REPO}::${KEY}-${DATE}" "${SRC}"
-
-echo "🤖 Pruning old backups..."
-borg prune --list --keep-within "${KEEP}"
+EOF

@@ -1,18 +1,15 @@
 #!/usr/bin/env sh
 
-case "${1:-client}" in
-  client)
-    /app/client "$@"
+case "${1:-server}" in
+  borgmatic-init)
+    /app/borgmatic-init "$@"
     ;;
   server)
     /app/server
     ;;
-  backup)
-    /app/backup "$@"
-    ;;
   *)
-    echo "🤖 Usage: $0 <server|client|backup>"
-    echo "   Defaulting to 'client'"
+    echo "🤖 Usage: $0 <server|borgmatic-init>"
+    echo "   Defaulting to 'server'"
     exit 42
     ;;
 esac
