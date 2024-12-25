@@ -29,6 +29,9 @@ cat <<EOF > "${DST}/${id}.yaml"
 
 archive_name_format: "{hostname}-${id}-{now}"
 
+constants:
+  id: ${id}
+
 EOF
   fi
 
