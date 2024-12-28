@@ -27,7 +27,7 @@ for id in $(yq 'keys | .[]' "$SOURCES_YAML"); do
 cat <<EOF > "${DST}/${id}.yaml"
 <<: !include /etc/borgmatic/common.config.yaml
 
-archive_name_format: "{hostname}-${id}-{now}"
+archive_name_format: "{hostname}-${id}-{now:%s}"
 
 EOF
   fi
