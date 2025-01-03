@@ -47,7 +47,6 @@ if [ -z "$SECRET_NAME" ]; then
   exit 1
 fi
 
-POD_NAME=$(kubectl get pods -n "$NAMESPACE" -l "$FILTER" -o jsonpath="{.items[0].metadata.name}")
 SECRET_KEY='postgres-password'
 if [ "$DUMP_AS_ADMIN" = false ]; then
   SECRET_KEY='password'
@@ -55,7 +54,7 @@ fi
 
 PGPASSWORD=$(kubectl get secrets -n "$NAMESPACE" "$SECRET_NAME" -o jsonpath="{.data.${SECRET_KEY}}" | base64 -d)
 
-if [ -z $PGPASSWORD ]; then
+if [ -z "$PGPASSWORD" ]; then
   echo "ERROR: No password found in secret '${SECRET_NAME}' in namespace '$NAMESPACE'"
   exit 1
 fi
@@ -82,8 +81,6 @@ postgresql_databases:
 - name: all # all databases
   username: ${PGUSER}
   password: ${PGPASSWORD}
-  pg_dump_command: >
-    kubectl exec -n $NAMESPACE $POD_NAME --
-    bash -c "PGPASSWORD=${PGPASSWORD} pg_dump -h $POD_NAME -U $PGUSER -d $POSTGRES_DATABASE -w"
+  hostname: ${INSTANCE_NAME}-postgresql.${NAMESPACE}.svc.cluster.local
 
 EOF

@@ -40,8 +40,6 @@ if [ -z "$SECRET_NAME" ]; then
   exit 1
 fi
 
-POD_NAME=$(kubectl get pods -n "$NAMESPACE" -l "$FILTER" -o jsonpath="{.items[0].metadata.name}")
-
 MYSQL_PASSWORD=$(kubectl --context="${KUBECONTEXT}" get secrets -n "$NAMESPACE" "$SECRET_NAME" -o jsonpath='{.data.mariadb-root-password}' | base64 -d)
 MYSQL_USER=root
 
@@ -52,8 +50,6 @@ mariadb_databases:
 - name: all # all databases
   username: ${MYSQL_USER}
   password: ${MYSQL_PASSWORD}
-  mariadb_dump_command: >
-    kubectl  exec -n "$NAMESPACE" "$POD_NAME" -c mariadb --
-    bash -c "/opt/bitnami/mariadb/bin/mariadb-dump --user=${MYSQL_USER} --password=${MYSQL_PASSWORD} --all-databases"
+  hostname: ${INSTANCE_NAME}-mariadb.${NAMESPACE}.svc.cluster.local
 
 EOF
