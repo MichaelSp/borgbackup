@@ -19,9 +19,16 @@ for id in $(yq 'keys | .[]' "$SOURCES_YAML"); do
   CONFIG=$(yq ".$id" "$SOURCES_YAML")
   TYPE=$(echo "${CONFIG}" | yq '.type // env(DEFAULT_TYPE)')
 
-  if [ "$TYPE" = "crontab" ] || [ $id = "crontab" ]; then
+  if [ "$TYPE" = "crontabs" ] || [ $id = "crontabs" ]; then
     echo "🕰 [cron]  Write crontab config for $id"
-    echo "${CONFIG}" | yq '(.schedule + " " + .command)' > "${DST}/crontab.txt"
+    echo "# crontab for borgmatic" > "${DST}/crontab.txt"
+    for i in $(echo "${CONFIG}" | yq 'keys | .[]'); do
+      NAME=$(echo "${CONFIG}" | yq ".$i.name")
+      SCHEDULE=$(echo "${CONFIG}" | yq ".$i.schedule")
+      COMMAND=$(echo "${CONFIG}" | yq ".$i.command")
+      echo "# ${NAME}" >> "${DST}/crontab.txt"
+      echo "${SCHEDULE} ${COMMAND}" >> "${DST}/crontab.txt"
+    done
     continue
   else
 cat <<EOF > "${DST}/${id}.yaml"

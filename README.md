@@ -7,9 +7,10 @@ support.
 Configuration via `${SOURCES_YAML:-./sources.yaml}`:
 
 ```
-crontab: # generic crontab configuration (not a backup source)
-  schedule: "17 17 * * *"
-  command: PATH=$PATH:/usr/local/bin /usr/local/bin/borgmatic --stats -v 0 2>&1
+crontabs: # generic crontab configuration (not a backup source)
+  - name: default
+    schedule: "17 17 * * *"
+    command: PATH=$PATH:/usr/local/bin /usr/local/bin/borgmatic --stats -v 0 2>&1
 backup-of-PVC:
   namespace: ns
   pvc: name-of-the-ovc
