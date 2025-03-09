@@ -1,7 +1,6 @@
 #!/usr/bin/env sh
 
 set -e
-set -x 
 
 SOURCES_YAML=${SOURCES_YAML:-./sources.yaml}
 ROOT=$(realpath "$(dirname "$0")")
