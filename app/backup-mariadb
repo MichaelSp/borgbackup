@@ -22,19 +22,6 @@ if [ -z "$INSTANCE_NAME" ] || [ -z "$NAMESPACE" ]; then
   exit 1
 fi
 
-##
-##
-# │   labels:                                                                                                                                                       │
-# │     app.kubernetes.io/component: primary                                                                                                                        │
-# │     app.kubernetes.io/instance: timelimit                                                                                                                       │
-# │     app.kubernetes.io/managed-by: Helm                                                                                                                          │
-# │     app.kubernetes.io/name: mariadb                                                                                                                             │
-# │     app.kubernetes.io/part-of: mariadb                                                                                                                          │
-# │     app.kubernetes.io/version: 11.4.5                                                                                                                           │
-# │     helm.sh/chart: mariadb-20.4.1                                                                                                                               │
-# │     helm.toolkit.fluxcd.io/name: timelimit                                                                                                                      │
-# │     helm.toolkit.fluxcd.io/namespace: timelimit
-
 FILTER="app.kubernetes.io/name=mariadb,app.kubernetes.io/instance=${INSTANCE_NAME},app.kubernetes.io/component=primary"
 
 POD_YAML=$(kubectl get statefulset -n "$NAMESPACE" -l "$FILTER" -o json)
