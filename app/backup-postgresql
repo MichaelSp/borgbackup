@@ -43,6 +43,14 @@ fi
 SECRET_NAME=$(echo "${POD_YAML}" | yq '.items[0].spec.template.spec.containers[0].env[] | select(.name == "POSTGRES_PASSWORD") | .valueFrom.secretKeyRef.name')
 if [ -z "$SECRET_NAME" ]; then
   echo "ERROR: No secret found for '${INSTANCE_NAME}' in namespace '$NAMESPACE' - searching for an env var named 'POSTGRES_PASSWORD'" >&2
+
+  # try to find the secret name in volumes name=postgresql-password
+  SECRET_NAME=$(echo "${POD_YAML}" | yq '.items[0].spec.template.spec.volumes[] | select(.name == "postgresql-password") | .secret.secretName')
+  if [ -z "$SECRET_NAME" ]; then
+    echo "ERROR: No secret found for '${INSTANCE_NAME}' in namespace '$NAMESPACE' - searching for a volume named 'postgresql-password'" >&2
+    exit 1
+  fi
+
   echo "spec: ${POD_YAML}" >&2
   exit 1
 fi
