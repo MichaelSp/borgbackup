@@ -1,4 +1,4 @@
-FROM alpine:3.21
+FROM alpine:3.22
 
 RUN apk add --no-cache borgbackup openssh yq kubectl
 RUN mkdir -p /etc/ssh/keys /app
