@@ -28,7 +28,7 @@ if [ -z "$INSTANCE_NAME" ] || [ -z "$NAMESPACE" ]; then
   exit 1
 fi
 
-FILTER="app.kubernetes.io/name=postgresql,app.kubernetes.io/instance=${INSTANCE_NAME},app.kubernetes.io/component=primary"
+FILTER="app.kubernetes.io/name=postgresql,app.kubernetes.io/instance=${INSTANCE_NAME}"
 
 POD_YAML=$(kubectl get statefulset -n "$NAMESPACE" -l "$FILTER" -o json)
 
