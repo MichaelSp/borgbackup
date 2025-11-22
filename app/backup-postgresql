@@ -28,9 +28,16 @@ if [ -z "$INSTANCE_NAME" ] || [ -z "$NAMESPACE" ]; then
   exit 1
 fi
 
-FILTER="app.kubernetes.io/name=postgresql,app.kubernetes.io/instance=${INSTANCE_NAME}"
+FILTER_BITNAMI="app.kubernetes.io/name=postgresql,app.kubernetes.io/instance=${INSTANCE_NAME},app.kubernetes.io/component=primary"
+FILTER_CLOUD_PIRATE="app.kubernetes.io/name=postgres,app.kubernetes.io/instance=${INSTANCE_NAME}"
 
-POD_YAML=$(kubectl get statefulset -n "$NAMESPACE" -l "$FILTER" -o json)
+POD_YAML=$(kubectl get statefulset -n "$NAMESPACE" -l "$FILTER_BITNAMI" -o json)
+if [ $(echo "${POD_YAML}" | yq '.items | length') = "0" ]; then
+  echo "🤖 No Bitnami PostgreSQL StatefulSet found for 'app.kubernetes.io/instance=${INSTANCE_NAME}', trying Cloud Pirate filter" >&2
+  POD_YAML=$(kubectl get statefulset -n "$NAMESPACE" -l "$FILTER_CLOUD_PIRATE" -o json)
+fi
+
+echo "$POD_YAML"
 
 # extract pod name
 STATEFUL_SET_NAME=$(echo "${POD_YAML}" | yq '.items[0].metadata.name')
@@ -48,8 +55,13 @@ if [ -z "$SECRET_NAME" ]; then
   SECRET_NAME=$(echo "${POD_YAML}" | yq '.items[0].spec.template.spec.volumes[] | select(.name == "postgresql-password") | .secret.secretName')
   if [ -z "$SECRET_NAME" ]; then
     echo "ERROR: No secret found for '${INSTANCE_NAME}' in namespace '$NAMESPACE' - searching for a volume named 'postgresql-password'" >&2
-    echo "spec: ${POD_YAML}" >&2
-    exit 1
+
+    # next: find the volume named 'postgresql-password' and get the secret name from there
+    SECRET_NAME=$(echo "${POD_YAML}" | yq '.items[0].spec.template.spec.volumes[] | select(.name == "postgresql-password") | .secret.secretName')
+    if [ -z "$SECRET_NAME" ]; then
+      echo "ERROR: No secret found for '${INSTANCE_NAME}' in namespace '$NAMESPACE' - unable to find secret name" >&2
+      exit 1
+    fi
   fi
 fi
 
