@@ -37,8 +37,6 @@ if [ $(echo "${POD_YAML}" | yq '.items | length') = "0" ]; then
   POD_YAML=$(kubectl get statefulset -n "$NAMESPACE" -l "$FILTER_CLOUD_PIRATE" -o json)
 fi
 
-echo "$POD_YAML"
-
 # extract pod name
 STATEFUL_SET_NAME=$(echo "${POD_YAML}" | yq '.items[0].metadata.name')
 if [ -z "$STATEFUL_SET_NAME" ] || [ "$STATEFUL_SET_NAME" = "null" ]; then
