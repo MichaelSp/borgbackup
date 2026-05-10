@@ -11,7 +11,7 @@ set -e # exit on error
 
 NAMESPACE=$(echo "${CONFIG}" | yq '.namespace')
 INSTANCE_NAME=$(echo "${CONFIG}" | yq '.instanceName')
-DUMP_AS_ADMIN=$(echo "${CONFIG}" | yq '.use_postgres_admin // true | tostring')
+DUMP_AS_ADMIN=$(echo "${CONFIG}" | yq '.use_postgres_admin // true | if type == "boolean" then tostring else . end')
 
 if [ "$DUMP_AS_ADMIN" != "true" ] && [ "$DUMP_AS_ADMIN" != "false" ]; then
   echo "🤖 use_postgres_admin for '${KEY}' is not a boolean: got '${DUMP_AS_ADMIN}'" >&2
