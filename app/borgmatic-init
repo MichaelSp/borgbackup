@@ -16,7 +16,7 @@ export DEFAULT_TYPE="${DEFAULT_TYPE:-pvc}" # pvc, postgresql, mysql, fs
 ## loop over all keys in the config map
 
 for id in $(yq 'keys | .[]' "$SOURCES_YAML"); do
-  CONFIG=$(yq ".$id" "$SOURCES_YAML")
+  CONFIG=$(yq ".\"${id}\"" "$SOURCES_YAML")
 
   if [ "$id" = "crontabs" ]; then
     echo "🕰 [cron]  Write crontab config for $id"
