@@ -101,9 +101,12 @@ if [ -z "$POSTGRES_DATABASE" ]; then
   POSTGRES_DATABASE="postgres"
 fi
 
-# Replace the connection details output with a pg_dump command
-kubectl exec -n "$NAMESPACE" deploy/"$STATEFUL_SET_NAME" -c postgresql -- \
-pg_dump -U "$PGUSER" -d "$POSTGRES_DATABASE" > paperless-backup.sql
+cat <<EOF
+read_special: "true"
+postgresql_databases:
+- name: all # all databases
+  username: ${PGUSER}
+  password: ${PGPASSWORD}
+  hostname: ${INSTANCE_NAME}-postgresql.${NAMESPACE}.svc.cluster.local
 
-# Output a success message
-echo "Backup completed: paperless-backup.sql"
+EOF
