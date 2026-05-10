@@ -68,10 +68,21 @@ if [ "$DUMP_AS_ADMIN" = false ]; then
   SECRET_KEY='password'
 fi
 
-PGPASSWORD=$(kubectl get secrets -n "$NAMESPACE" "$SECRET_NAME" -o jsonpath="{.data.${SECRET_KEY}}" | base64 -d)
+PGPASSWORD_B64=$(kubectl get secrets -n "$NAMESPACE" "$SECRET_NAME" -o jsonpath="{.data.${SECRET_KEY}}")
+
+if [ -z "$PGPASSWORD_B64" ]; then
+  AVAILABLE_SECRET_KEYS=$(kubectl get secrets -n "$NAMESPACE" "$SECRET_NAME" -o go-template='{{range $k, $v := .data}}{{printf "%s " $k}}{{end}}')
+  echo "ERROR: Secret key '${SECRET_KEY}' not found in secret '${SECRET_NAME}' in namespace '${NAMESPACE}'. use_postgres_admin='${DUMP_AS_ADMIN}'. Available keys: ${AVAILABLE_SECRET_KEYS}" >&2
+  if [ "$DUMP_AS_ADMIN" = true ]; then
+    echo "HINT: If this PostgreSQL secret uses key 'password' (common for Cloud Pirate), set use_postgres_admin: false for '${KEY}' in sources.yaml." >&2
+  fi
+  exit 1
+fi
+
+PGPASSWORD=$(echo "$PGPASSWORD_B64" | base64 -d)
 
 if [ -z "$PGPASSWORD" ]; then
-  echo "ERROR: No password found in secret '${SECRET_NAME}' in namespace '$NAMESPACE'"
+  echo "ERROR: Secret key '${SECRET_KEY}' in secret '${SECRET_NAME}' is empty after base64 decode (namespace '${NAMESPACE}')" >&2
   exit 1
 fi
 
@@ -90,13 +101,9 @@ if [ -z "$POSTGRES_DATABASE" ]; then
   POSTGRES_DATABASE="postgres"
 fi
 
-cat <<EOF
+# Replace the connection details output with a pg_dump command
+kubectl exec -n "$NAMESPACE" deploy/"$STATEFUL_SET_NAME" -c postgresql -- \
+pg_dump -U "$PGUSER" -d "$POSTGRES_DATABASE" > paperless-backup.sql
 
-read_special: "true"
-postgresql_databases:
-- name: all # all databases
-  username: ${PGUSER}
-  password: ${PGPASSWORD}
-  hostname: ${INSTANCE_NAME}-postgresql.${NAMESPACE}.svc.cluster.local
-
-EOF
+# Output a success message
+echo "Backup completed: paperless-backup.sql"
