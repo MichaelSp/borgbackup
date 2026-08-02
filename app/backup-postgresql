@@ -11,6 +11,7 @@ set -e # exit on error
 
 NAMESPACE=$(echo "${CONFIG}" | yq '.namespace')
 INSTANCE_NAME=$(echo "${CONFIG}" | yq '.instanceName')
+HOSTNAME=$(echo "${CONFIG}" | yq -r '.hostname // ""')
 RAW_DUMP_AS_ADMIN=$(echo "${CONFIG}" | yq '.use_postgres_admin')
 if [ "$RAW_DUMP_AS_ADMIN" = "null" ]; then
   DUMP_AS_ADMIN="true"
@@ -31,6 +32,10 @@ fi
 if [ -z "$INSTANCE_NAME" ] || [ -z "$NAMESPACE" ]; then
   echo "NAMESPACE and INSTANCE_NAME is required 💥" >&2
   exit 1
+fi
+
+if [ -z "$HOSTNAME" ]; then
+  HOSTNAME="${INSTANCE_NAME}-postgresql.${NAMESPACE}.svc.cluster.local"
 fi
 
 FILTER_BITNAMI="app.kubernetes.io/name=postgresql,app.kubernetes.io/instance=${INSTANCE_NAME},app.kubernetes.io/component=primary"
@@ -112,6 +117,6 @@ postgresql_databases:
 - name: all # all databases
   username: ${PGUSER}
   password: ${PGPASSWORD}
-  hostname: ${INSTANCE_NAME}-postgresql.${NAMESPACE}.svc.cluster.local
+  hostname: ${HOSTNAME}
 
 EOF

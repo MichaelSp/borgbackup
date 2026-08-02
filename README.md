@@ -20,6 +20,13 @@ db-example
   type: mariadb
   namespace: ns
   instanceName: this-instance   # see label app.kubernetes.io/instance:
+
+postgresql-example:
+  type: postgresql
+  namespace: ns
+  instanceName: this-instance
+  # Optional. Defaults to <instanceName>-postgresql.<namespace>.svc.cluster.local.
+  hostname: postgres.ns.svc.cluster.local
 ```
 
 ## Usage:
