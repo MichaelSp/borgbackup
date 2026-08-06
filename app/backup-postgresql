@@ -118,5 +118,6 @@ postgresql_databases:
   username: ${PGUSER}
   password: ${PGPASSWORD}
   hostname: ${HOSTNAME}
+  pg_dump_command: /usr/local/bin/pg_dumpall-for-server
 
 EOF
