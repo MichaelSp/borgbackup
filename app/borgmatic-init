@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 
-set -e
+set -eu
 
 SOURCES_YAML=${SOURCES_YAML:-./sources.yaml}
 ROOT=$(realpath "$(dirname "$0")")
@@ -11,17 +11,19 @@ export DEFAULT_TYPE="${DEFAULT_TYPE:-pvc}" # pvc, postgresql, mysql, fs
 
 
 # make kubectl available to the main-container
-[ -n "$(which kubectl)" ] && [ -d /bin-for-main ] && cp "$(which kubectl)" /bin-for-main/kubectl
+if [ -d /bin-for-main ]; then
+  cp "$(command -v kubectl)" /bin-for-main/kubectl
+fi
 
 ## loop over all keys in the config map
 
-for id in $(yq 'keys | .[]' "$SOURCES_YAML"); do
+for id in $(yq -r 'keys | .[]' "$SOURCES_YAML"); do
   CONFIG=$(yq ".\"${id}\"" "$SOURCES_YAML")
 
   if [ "$id" = "crontabs" ]; then
     echo "🕰 [cron]  Write crontab config for $id"
     echo "# crontab for borgmatic" > "${DST}/crontab.txt"
-    for i in $(echo "${CONFIG}" | yq 'keys | .[]'); do
+    for i in $(echo "${CONFIG}" | yq -r 'keys | .[]'); do
       NAME=$(echo "${CONFIG}" | yq ".$i.name")
       SCHEDULE=$(echo "${CONFIG}" | yq ".$i.schedule")
       COMMAND=$(echo "${CONFIG}" | yq ".$i.command")
@@ -29,33 +31,74 @@ for id in $(yq 'keys | .[]' "$SOURCES_YAML"); do
       echo "${SCHEDULE} ${COMMAND}" >> "${DST}/crontab.txt"
     done
     continue
-  else
-    TYPE=$(echo "${CONFIG}" | yq '.type // env(DEFAULT_TYPE)')
-cat <<EOF > "${DST}/${id}.yaml"
+  fi
+
+  TYPE=$(echo "${CONFIG}" | yq '.type // env(DEFAULT_TYPE)')
+  RUNS_ON=$(echo "${CONFIG}" | yq -r '."runs-on" // "any"')
+  NODE=${K8S_NODE_NAME:-}
+  OWNER=$NODE
+  SRC=""
+  case "$RUNS_ON" in
+    any) OWNER=${RUNS_ON_ANY_NODE:-$NODE} ;;
+    all) ;;
+    *)
+      if ! printf '%s\n' "$RUNS_ON" | LC_ALL=C grep -Eq '^[a-zA-Z0-9][a-zA-Z0-9._-]*$'; then
+        echo "$id: invalid runs-on value: $RUNS_ON" >&2
+        exit 1
+      fi
+      OWNER=$RUNS_ON
+      [ -n "$NODE" ] || { echo "$id: K8S_NODE_NAME is required for runs-on: $RUNS_ON" >&2; exit 1; }
+      ;;
+  esac
+
+  # Resolve PVC ownership before filtering, so the exporter can generate the
+  # same archive names as the node-local backup jobs.
+  if [ "$TYPE" = pvc ]; then
+    NS=$(echo "${CONFIG}" | yq -r '.namespace // ""')
+    PVC=$(echo "${CONFIG}" | yq -r '.pvc // ""')
+    [ -n "$NS" ] && [ -n "$PVC" ] || { echo "$id: namespace and pvc are required" >&2; exit 1; }
+    PV=$(kubectl get pvc -n "$NS" "$PVC" -o jsonpath='{.spec.volumeName}')
+    [ -n "$PV" ] || { echo "$id: PVC is not bound" >&2; exit 1; }
+    PV_CONFIG=$(kubectl get pv "$PV" -o json)
+    SRC=$(echo "$PV_CONFIG" | yq -r '.spec.local.path // .spec.hostPath.path // ""')
+    [ -n "$SRC" ] || { echo "$id: PV has no local storage path" >&2; exit 1; }
+    if [ "$RUNS_ON" != all ] && [ -n "$NODE" ]; then
+      PV_NODE=$(echo "$PV_CONFIG" | yq -r '.spec.nodeAffinity.required.nodeSelectorTerms[].matchExpressions[] | select(.key == "kubernetes.io/hostname" and .operator == "In") | .values[]')
+      case "$PV_NODE" in
+        ""|*'
+'*) echo "$id: PV must resolve to exactly one node" >&2; exit 1 ;;
+      esac
+      if [ "$RUNS_ON" != any ] && [ "$OWNER" != "$PV_NODE" ]; then
+        echo "$id: runs-on $OWNER conflicts with PVC node $PV_NODE" >&2
+        exit 1
+      fi
+      OWNER=$PV_NODE
+    fi
+  fi
+
+  if [ "${BORGMATIC_INIT_ALL_NODES:-false}" != true ] && [ "$RUNS_ON" != all ] && [ -n "$OWNER" ] && [ "$OWNER" != "$NODE" ]; then
+    echo "Skip $id: runs on $OWNER (this node: $NODE)"
+    rm -f "${DST}/${id}.yaml"
+    continue
+  fi
+
+  cat <<EOF > "${DST}/${id}.yaml"
 <<: !include /etc/borgmatic/common.config.yaml
 
 archive_name_format: "{hostname}-${id}-{now:%s}"
 
 EOF
+  if [ -n "$OWNER" ]; then
+    printf 'constants:\n  hostname: "%s"\n\n' "$OWNER" >> "${DST}/${id}.yaml"
+  fi
+  if [ "$RUNS_ON" = all ] && [ "${BORGMATIC_INIT_ALL_NODES:-false}" = true ]; then
+    # Catalog consumers need all node-specific archives for this source.
+    printf 'match_archives: "sh:*-%s-[0-9]*"\n\n' "$id" >> "${DST}/${id}.yaml"
   fi
 
   case "$TYPE" in
     pvc)
-      NS=$(echo "${CONFIG}" | yq '.namespace')
-      PVC=$(echo "${CONFIG}" | yq '.pvc')
-
-      if [ -z "$NS" ]; then
-        echo "Namespace is required for PVC backup"
-        exit 1
-      fi
-      if [ -z "$PVC" ]; then
-        echo "PVC is required for PVC backup"
-        exit 1
-      fi
-      PV=$(kubectl get pvc -n "${NS}" "${PVC}"  -o jsonpath='{.spec.volumeName}')
-      # shellcheck disable=SC2155 # used in yq
-      export SRC="$(kubectl get pv "${PV}" -o jsonpath='{.spec.local.path}')"
-
+      export SRC
       echo "${CONFIG}" | yq '{"source_directories": [env(SRC)], "exclude_patterns": .exclude_patterns // []}' >> "${DST}/${id}.yaml"
       echo "📦 [pvc]   Write PVC config for $id"
       ;;
